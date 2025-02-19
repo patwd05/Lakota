@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>School Map</title>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; position: right; }
+    
+    /* Map container */
+    #map {
+  width: 70%;
+  height: 100vh;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+/* Logo should be fixed at the bottom */
+#control-panel-logo {
+    position: fixed;
+    top: 15px;
+    right: 0%;
+    padding-bottom: 15px;
+    transform: translateX(-50%);
+    max-width: 10%; /* Reduce logo size */
+    height: auto;
+    display: block;
+}
+#controls-container {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;  /* Aligns content to the top */
+    position: absolute;
+    width: 30%;
+    height: 100vh;
+    background: rgb(255, 255, 255);
+    padding: 0px;
+    border: 1px solid #ccc;
+    font-family: sans-serif;
+    font-size: 12px;
+    z-index: 2;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    left: 0; /* Moves panel to the right side */
+    bottom: 7px;
+    overflow: hidden;
+}
+    #student-info-panel {
+    height: auto; /* Let it expand naturally */
+    max-height: 50vh; /* Allow a bit more space */
+    overflow: visible; /* Prevent clipping */
+}
+
+    #studentChart-container {
+    max-height: 80%; /* Allow more space */
+    align-items: flex-start; /* Align to top */
+}
+
+    #studentChart {
+    max-height: 300px; /* Give more room */
+    width: 90%; /* Make sure it doesn't overflow */
+}
+
+
+    /* Toggle Button */
+    #toggle-button {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 3;
+      background: hsl(196, 100%, 37%);
+      color: white;
+      border: none;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 5px;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    }
+    /* Isochrone Buttons */
+    .isochrone-button {
+      background:  hsl(196, 100%, 37%)c;
+      border: none;
+      padding: 5px 10px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    
+    .isochrone-button.selected {
+      background: #353435;
+      color: white;
+    }
+
+
+    #polar-chart-panel {
+      display:none;
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      height: 400px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+      z-index: 1000;
+}
+
+
+  </style>
+</head>
+<body>
+
+  <!-- Map container -->
+  <div id="map"></div>
+
+  <img id="control-panel-logo" src="logo-Perkins-Eastman.png" alt="Organization Logo">
+</div>
+
+
+  <!-- Controls (Legend + Filters + Basemap + Isochrone Toggle + School Dropdown) -->
+ 
+  <div id="polar-chart-panel">
+    <h4>Population by Direction</h4>
+    <p># of people by direction from center of boundary</p>
+
+    <canvas id="polarChart"></canvas>
+</div>
+<div id="controls-container">  
+    <h2><p><p></p>Lakota Data Explorer Tool</h2>
+
+    <label for="schoolDropdown"><strong>Select a School:</strong></label>
+    <select id="schoolDropdown">
+      <option value="">-- Select a school --</option>
+    </select>
+    
+    <div id="basemapToggle">
+      <p><H3>Analyze Population</H3></p>
+    </div>
+    <p>To analyze population data around locations, you can draw your own boundary or select isochrone to create a distance-based driving radius.</p>
+    
+    <p>To draw your own boundary, select <strong>"Draw Boundary"</strong> below. Click twice on a map location and then create at least 3 points to create a boundary. Double click with the right mouse button to finish!.</p>
+    
+    <p>To create a driving radius, slect <strong>"Isochrone"</strong> from below and select the distance. Double click on the map where you want the center to be</p>
+    
+    <div id="isochroneToggle">
+      <p><strong>Select Analysis Mode</strong></p>
+      <label><input type="radio" name="analysis-mode" value="polygon" checked> Draw Boundary</label>
+      <label><input type="radio" name="analysis-mode" value="isochrone"> Isochrone</label>
+
+      <div>
+        <button id="isochrone-800" class="isochrone-button">1 Mi</button>
+        <button id="isochrone-1600" class="isochrone-button">2 Mi</button>
+        <button id="isochrone-3200" class="isochrone-button">5 Mi</button>
+      </div>
+
+      <button id="clear-polygon" class="isochrone-button">Clear Polygon</button>
+    </div>
+   <!-- Add the Student Info Panel inside controls-container -->
+   <div id="student-info-panel">
+  </div>
+  <canvas id="dataChart"></canvas>
+    
+  </div>
+
+
+   <!-- Add the logo below the pie chart -->
+
+  <script>
+       const toggleButton = document.getElementById('toggle-button');
+    const controlsContainer = document.getElementById('controls-container');
+    const isochroneButtons = document.querySelectorAll('.isochrone-button');
+
+    toggleButton.addEventListener('click', () => {
+      controlsContainer.classList.toggle('hidden');
+      toggleButton.textContent = controlsContainer.classList.contains('hidden') ? '>>' : '<<';
+    });
+    isochroneButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        isochroneButtons.forEach(btn => btn.classList.remove('selected'));
+        button.classList.add('selected');
+      });
+    });
+  </script>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
